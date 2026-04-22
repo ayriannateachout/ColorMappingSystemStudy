@@ -1,10 +1,90 @@
+library(shiny)
+
 page1_ui <- fluidPage(
   
-  titlePanel("Color Mapping Prototype — Affective LCh System"),
+  titlePanel("2D Modeling Prototype"),
   
-  h3("Dataset Status & Normalization (Review 2)"),
-  verbatimTextOutput("file_status"),
-  verbatimTextOutput("norm_stats"),
+  p("This page allows the user to adjust core emotional inputs and observe how the continuous model responds through interpretation, color, and optional Plutchik labeling."),
   
-  # keep the rest of your current page 1 UI here
+  hr(),
+  
+  h3("1. Input Controls"),
+  p("Adjust the values below to explore how valence and arousal influence hue, color, and emotional interpretation."),
+  
+  fluidRow(
+    column(
+      width = 6,
+      sliderInput(
+        "valence_test",
+        "Valence",
+        min = 0,
+        max = 1,
+        value = 0.5,
+        step = 0.01
+      )
+    ),
+    column(
+      width = 6,
+      sliderInput(
+        "arousal_test",
+        "Arousal",
+        min = 0,
+        max = 1,
+        value = 0.5,
+        step = 0.01
+      )
+    )
+  ),
+  
+  fluidRow(
+    column(
+      width = 6,
+      checkboxInput(
+        "use_wheel",
+        "Enable Plutchik label overlay",
+        value = TRUE
+      )
+    ),
+    column(
+      width = 6,
+      checkboxInput(
+        "snap_to_emotion",
+        "Snap hue to nearest Plutchik label",
+        value = FALSE
+      )
+    )
+  ),
+  
+  hr(),
+  
+  h3("2. Model Interpretation"),
+  p("This section will show how the inputs are interpreted by the continuous model."),
+  verbatimTextOutput("model_inputs_output"),
+  verbatimTextOutput("model_structure_output"),
+  
+  hr(),
+  
+  h3("3. 2D Emotional Position"),
+  p("This section will later display the current point in the 2D model space."),
+  plotOutput("emotion_map_plot", height = "400px"),
+  
+  hr(),
+  
+  h3("4. Color Mapping"),
+  p("This section shows the resulting color output."),
+  verbatimTextOutput("lch_output"),
+  verbatimTextOutput("hex_output"),
+  uiOutput("color_swatch"),
+  
+  hr(),
+  
+  h3("5. Optional Plutchik Comparison"),
+  p("This section will show the nearest Plutchik label and related hue interpretation."),
+  verbatimTextOutput("wheel_info"),
+  
+  hr(),
+  
+  h3("6. Interpretive Summary"),
+  p("This section will provide a short written interpretation of the modeled emotional position."),
+  verbatimTextOutput("prototype_interpretation")
 )
