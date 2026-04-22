@@ -22,24 +22,7 @@ lch_to_hex <- function(L, C, h) {
   C <- max(as.numeric(C), 0)
   h <- as.numeric(h) %% 360
   
-  h_rad <- h * pi / 180
-  a_lab <- C * cos(h_rad)
-  b_lab <- C * sin(h_rad)
-  
-  lab_matrix <- matrix(c(L, a_lab, b_lab), ncol = 3)
-  
-  rgb <- grDevices::convertColor(
-    lab_matrix,
-    from = "Lab",
-    to = "sRGB",
-    scale.in = 100,
-    scale.out = 1,
-    clip = TRUE
-  )
-  
-  rgb <- pmin(pmax(rgb, 0), 1)
-  
-  grDevices::rgb(rgb[1, 1], rgb[1, 2], rgb[1, 3])
+  grDevices::hcl(h = h, c = C, l = L)
 }
 
 # =========================
@@ -99,23 +82,34 @@ function(input, output, session) {
     }
   })
   
-  output$lch_output <- renderPrint({
-    req(current_lch())
-    
-    print(list(
-      L = round(current_lch()$L, 2),
-      C = round(current_lch()$C, 2),
-      h = round(final_hue(), 2)
-    ))
-  })
-  
   current_hex <- reactive({
     lch_to_hex(current_lch()$L, current_lch()$C, final_hue())
   })
   
+  output$lch_output <- renderPrint({
+    req(current_lch())
+    
+    print(list(
+      Lightness = round(current_lch()$L, 2),
+      Chroma = round(current_lch()$C, 2),
+      Hue = round(final_hue(), 2)
+    ))
+  })
+  
+  output$unique_hue_output <- renderPrint({
+    req(current_lch())
+    
+    cat(
+      "Unique Hue Interpretation:", "\n",
+      "The current modeled hue is", round(final_hue(), 2), "degrees.", "\n",
+      "This represents the continuous angular color position produced by the current valence and arousal values.",
+      sep = " "
+    )
+  })
+  
   output$hex_output <- renderPrint({
     req(current_hex())
-    print(current_hex())
+    print(list(Hex = current_hex()))
   })
   
   output$color_swatch <- renderUI({
@@ -125,7 +119,7 @@ function(input, output, session) {
       style = paste0(
         "width:100%; height:140px;",
         "background-color:", current_hex(), ";",
-        "border-radius:12px;"
+        "border-radius:12px; border:2px solid #444;"
       )
     )
   })
@@ -142,13 +136,15 @@ function(input, output, session) {
       info <- get_feelings_label(base_h)
       
       print(list(
-        Emotion = info$emotion,
-        Confidence = info$confidence,
-        Base_Hue = round(base_h, 2),
-        Final_Hue = round(final_hue(), 2)
+        "Nearest Plutchik Label" = info$emotion,
+        "Confidence" = info$confidence,
+        "Base Hue" = round(base_h, 2),
+        "Final Hue" = round(final_hue(), 2)
       ))
     } else {
-      print(list(Hue = round(base_h, 2)))
+      print(list(
+        "Continuous Hue Only" = round(base_h, 2)
+      ))
     }
   })
   
@@ -191,36 +187,110 @@ function(input, output, session) {
     vals <- current_model_values()
     
     print(list(
-      Direction = round(vals$theta_deg, 2),
-      Constriction = round(vals$constriction, 3),
-      Defusion = round(vals$defusion, 3),
-      Z = round(vals$z, 3),
-      Magnitude = round(vals$r, 3)
+      "Angular Direction (degrees)" = round(vals$theta_deg, 2),
+      "Constriction" = round(vals$constriction, 3),
+      "Defusion" = round(vals$defusion, 3),
+      "Structural Axis z" = round(vals$z, 3),
+      "Magnitude r" = round(vals$r, 3)
     ))
   })
+  
+  output$state_snapshot_table <- renderTable({
+    vals <- current_model_values()
+    
+    data.frame(
+      Measure = c(
+        "Valence",
+        "Arousal",
+        "Direction (degrees)",
+        "Constriction",
+        "Defusion",
+        "Structural Axis z",
+        "Magnitude r",
+        "Hue",
+        "Hex"
+      ),
+      Value = c(
+        round(vals$valence, 3),
+        round(vals$arousal, 3),
+        round(vals$theta_deg, 2),
+        round(vals$constriction, 3),
+        round(vals$defusion, 3),
+        round(vals$z, 3),
+        round(vals$r, 3),
+        round(final_hue(), 2),
+        current_hex()
+      ),
+      check.names = FALSE
+    )
+  }, striped = TRUE, bordered = TRUE, spacing = "m")
   
   output$prototype_interpretation <- renderPrint({
     vals <- current_model_values()
     
     structure_text <- if (vals$z > 0.15) {
-      "more constricted than diffuse"
+      "The current state leans more constricted than diffuse."
     } else if (vals$z < -0.15) {
-      "more diffuse than constricted"
+      "The current state leans more diffuse than constricted."
     } else {
-      "balanced between constriction and diffusion"
+      "The current state appears relatively balanced between constriction and diffusion."
     }
     
     intensity_text <- if (vals$r > 0.8) {
-      "strong intensity"
+      "The overall magnitude is relatively strong."
     } else if (vals$r > 0.4) {
-      "moderate intensity"
+      "The overall magnitude is moderate."
     } else {
-      "gentle intensity"
+      "The overall magnitude is relatively gentle."
+    }
+    
+    direction_text <- if (vals$valence >= 0.5 && vals$arousal >= 0.5) {
+      "The point occupies a higher-valence, higher-arousal region."
+    } else if (vals$valence < 0.5 && vals$arousal >= 0.5) {
+      "The point occupies a lower-valence, higher-arousal region."
+    } else if (vals$valence < 0.5 && vals$arousal < 0.5) {
+      "The point occupies a lower-valence, lower-arousal region."
+    } else {
+      "The point occupies a higher-valence, lower-arousal region."
     }
     
     cat(
-      "This state appears", structure_text, "with", intensity_text, "."
+      structure_text, "\n\n",
+      intensity_text, "\n\n",
+      direction_text, "\n\n",
+      "The current hue and color output provide a continuous perceptual expression of this position.",
+      sep = ""
     )
+  })
+  
+  # -------------------------
+  # PHASE 6 PART 3 PLOT
+  # -------------------------
+  output$emotion_map_plot <- renderPlot({
+    vals <- current_model_values()
+    
+    plot(
+      x = vals$valence,
+      y = vals$arousal,
+      xlim = c(0, 1),
+      ylim = c(0, 1),
+      xlab = "Valence",
+      ylab = "Arousal",
+      main = "2D Emotional Position",
+      pch = 19,
+      cex = 2,
+      col = current_hex()
+    )
+    
+    abline(h = seq(0, 1, by = 0.25), col = "gray85", lty = 3)
+    abline(v = seq(0, 1, by = 0.25), col = "gray85", lty = 3)
+    
+    text(0.15, 0.92, "low valence\nhigh arousal", cex = 0.8, col = "gray40")
+    text(0.85, 0.92, "high valence\nhigh arousal", cex = 0.8, col = "gray40")
+    text(0.15, 0.08, "low valence\nlow arousal", cex = 0.8, col = "gray40")
+    text(0.85, 0.08, "high valence\nlow arousal", cex = 0.8, col = "gray40")
+    
+    points(vals$valence, vals$arousal, pch = 19, cex = 2.4, col = current_hex())
   })
   
   # -------------------------

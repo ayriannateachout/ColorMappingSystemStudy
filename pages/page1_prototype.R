@@ -58,33 +58,40 @@ page1_ui <- fluidPage(
   hr(),
   
   h3("2. Model Interpretation"),
-  p("This section will show how the inputs are interpreted by the continuous model."),
+  p("This section shows how the current inputs are interpreted by the continuous model."),
   verbatimTextOutput("model_inputs_output"),
   verbatimTextOutput("model_structure_output"),
   
   hr(),
   
-  h3("3. 2D Emotional Position"),
-  p("This section will later display the current point in the 2D model space."),
+  h3("3. Current State Snapshot"),
+  p("This section gathers the most important current model outputs into one view."),
+  tableOutput("state_snapshot_table"),
+  
+  hr(),
+  
+  h3("4. 2D Emotional Position"),
+  p("This section displays the current point in the 2D model space."),
   plotOutput("emotion_map_plot", height = "400px"),
   
   hr(),
   
-  h3("4. Color Mapping"),
+  h3("5. Color Mapping"),
   p("This section shows the resulting color output."),
   verbatimTextOutput("lch_output"),
+  verbatimTextOutput("unique_hue_output"),
   verbatimTextOutput("hex_output"),
   uiOutput("color_swatch"),
   
   hr(),
   
-  h3("5. Optional Plutchik Comparison"),
-  p("This section will show the nearest Plutchik label and related hue interpretation."),
+  h3("6. Optional Plutchik Comparison"),
+  p("This section shows the nearest Plutchik label and related hue interpretation."),
   verbatimTextOutput("wheel_info"),
   
   hr(),
   
-  h3("6. Interpretive Summary"),
-  p("This section will provide a short written interpretation of the modeled emotional position."),
+  h3("7. Interpretive Summary"),
+  p("This section provides a short written interpretation of the modeled emotional position."),
   verbatimTextOutput("prototype_interpretation")
-)
+  )
