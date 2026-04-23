@@ -264,7 +264,7 @@ function(input, output, session) {
   })
   
   # -------------------------
-  # PHASE 6 PART 3 PLOT
+  # PLOT
   # -------------------------
   output$emotion_map_plot <- renderPlot({
     vals <- current_model_values()
@@ -293,6 +293,65 @@ function(input, output, session) {
     points(vals$valence, vals$arousal, pch = 19, cex = 2.4, col = current_hex())
   })
   
+  # -------------------------
+  # PHASE 7 PART 1 - DATA IMPLEMENTATION
+  # -------------------------
+  
+  data_file <- "data/emotion_data.csv"
+  
+  data_loaded <- reactive({
+    if (file.exists(data_file)) {
+      read.csv(data_file)
+    } else {
+      NULL
+    }
+  })
+  
+  output$data_status <- renderPrint({
+    if (is.null(data_loaded())) {
+      cat("No dataset found. Please place a CSV file in the data folder named 'emotion_data.csv'.")
+    } else {
+      cat("Dataset loaded successfully.")
+    }
+  })
+  
+  output$data_preview <- renderTable({
+    req(data_loaded())
+    head(data_loaded(), 10)
+  })
+  
+  # apply model to dataset
+  model_applied_data <- reactive({
+    df <- data_loaded()
+    req(df)
+    
+    # expect columns: valence, arousal
+    df$constriction <- abs(df$valence) * abs(df$arousal)
+    df$defusion <- (1 - abs(df$valence)) * (1 - abs(df$arousal))
+    df$z <- df$constriction - df$defusion
+    df$r <- sqrt(df$valence^2 + df$arousal^2)
+    df$theta <- (atan2(df$arousal, df$valence) * 180 / pi) %% 360
+    
+    df
+  })
+  
+  output$model_applied_table <- renderTable({
+    req(model_applied_data())
+    head(model_applied_data(), 10)
+  })
+  
+  output$data_summary_output <- renderPrint({
+    df <- model_applied_data()
+    req(df)
+    
+    cat("Number of observations:", nrow(df), "\n\n")
+    
+    cat("Average Valence:", round(mean(df$valence, na.rm = TRUE), 3), "\n")
+    cat("Average Arousal:", round(mean(df$arousal, na.rm = TRUE), 3), "\n\n")
+    
+    cat("Average Structural Axis (z):", round(mean(df$z, na.rm = TRUE), 3), "\n")
+    cat("Average Magnitude (r):", round(mean(df$r, na.rm = TRUE), 3), "\n")
+  })
   # -------------------------
   # FORMULA PAGE OUTPUTS
   # -------------------------
