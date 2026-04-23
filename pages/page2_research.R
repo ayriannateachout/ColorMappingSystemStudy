@@ -47,12 +47,18 @@ page2_ui <- fluidPage(
     tags$li("intensity can be represented as magnitude")
   ),
   
+  p("Within the proposed sphere, the Plutchik wheel becomes the equator. Emotional families remain distributed around the circular plane, preserving the recognizable structure of the original wheel while allowing movement between categories."),
+  
+  p("A new north-south axis is then introduced. Upward movement represents constriction, while downward movement represents defusion. This allows the model to distinguish between emotional family and emotional structure rather than compressing both into one dimension."),
+  
   tags$img(src = "CMMathModel.png", style = "max-width:100%; height:auto; margin-bottom:20px;"),
   
   h3("Color as a Continuous Medium"),
   p("Color provides a natural way to represent continuous variation. Unlike discrete categories, color exists as a smooth spectrum, where small changes produce gradual perceptual differences."),
   
   p("Hue allows directional variation, forming a circular structure similar to emotional categories. Lightness introduces vertical variation, allowing states to appear more constrained or more diffuse. Chroma reflects intensity, increasing or decreasing saturation without changing structure."),
+  
+  p("Within the sphere model, darker values correspond to upward movement toward constriction, while lighter values correspond to downward movement toward defusion. This gives the north-south axis a perceptual meaning that can be seen directly rather than only described mathematically."),
   
   p("Together, these dimensions allow for interpolation between states, where emotional positions are not limited to predefined labels but can exist anywhere within a continuous field."),
   

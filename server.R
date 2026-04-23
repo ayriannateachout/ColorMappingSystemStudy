@@ -4,10 +4,12 @@ library(shiny)
 # CORE COLOR MAPPING
 # =========================
 affect_to_lch <- function(valence, arousal) {
-  v <- min(max(valence, 0), 1)
+  v <- min(max(valence, -1), 1)
   a <- min(max(arousal, 0), 1)
   
-  h <- 240 * (1 - v)
+  v_scaled <- (v + 1) / 2
+  h <- 240 * (1 - v_scaled)
+  
   C <- 20 + (60 * a)
   L <- 60 + (20 * a)
   
@@ -74,6 +76,49 @@ map_r_to_chroma <- function(r) {
 }
 
 # =========================
+# SONG SUMMARY HELPERS
+# =========================
+circular_mean_degrees <- function(theta_deg) {
+  theta_rad <- theta_deg * pi / 180
+  mean_x <- mean(cos(theta_rad), na.rm = TRUE)
+  mean_y <- mean(sin(theta_rad), na.rm = TRUE)
+  ((atan2(mean_y, mean_x) * 180 / pi) %% 360)
+}
+
+top_plutchik_labels <- function(theta_values, top_n = 3) {
+  labels <- sapply(theta_values, function(th) {
+    get_feelings_label(th)$emotion
+  })
+  
+  counts <- sort(table(labels), decreasing = TRUE)
+  top_labels <- names(counts)[seq_len(min(top_n, length(counts)))]
+  paste(top_labels, collapse = ", ")
+}
+
+interpret_song_summary <- function(mean_z, mean_r, mean_theta) {
+  structure_text <- if (mean_z > 0.10) {
+    "leans toward constriction"
+  } else if (mean_z < -0.10) {
+    "leans toward defusion"
+  } else {
+    "remains relatively balanced"
+  }
+  
+  intensity_text <- if (mean_r > 0.80) {
+    "with stronger overall intensity"
+  } else if (mean_r > 0.40) {
+    "with moderate overall intensity"
+  } else {
+    "with gentler overall intensity"
+  }
+  
+  paste(
+    "This song", structure_text, intensity_text,
+    "and centers around", round(mean_theta, 1), "degrees on the emotional equator."
+  )
+}
+
+# =========================
 # SERVER
 # =========================
 function(input, output, session) {
@@ -97,65 +142,6 @@ function(input, output, session) {
   
   current_hex <- reactive({
     lch_to_hex(current_lch()$L, current_lch()$C, final_hue())
-  })
-  
-  output$lch_output <- renderPrint({
-    req(current_lch())
-    
-    print(list(
-      Lightness = round(current_lch()$L, 2),
-      Chroma = round(current_lch()$C, 2),
-      Hue = round(final_hue(), 2)
-    ))
-  })
-  
-  output$unique_hue_output <- renderPrint({
-    req(current_lch())
-    
-    cat(
-      "Unique Hue Interpretation:", "\n",
-      "The current modeled hue is", round(final_hue(), 2), "degrees.", "\n",
-      "This represents the continuous angular color position produced by the current valence and arousal values.",
-      sep = " "
-    )
-  })
-  
-  output$hex_output <- renderPrint({
-    req(current_hex())
-    print(list(Hex = current_hex()))
-  })
-  
-  output$color_swatch <- renderUI({
-    req(current_hex())
-    
-    tags$div(
-      style = paste0(
-        "width:100%; height:140px;",
-        "background-color:", current_hex(), ";",
-        "border-radius:12px; border:2px solid #444;"
-      )
-    )
-  })
-  
-  output$wheel_info <- renderPrint({
-    req(current_lch())
-    
-    base_h <- current_lch()$h
-    
-    if (isTRUE(input$use_wheel)) {
-      info <- get_feelings_label(base_h)
-      
-      print(list(
-        "Nearest Plutchik Label" = info$emotion,
-        "Confidence" = info$confidence,
-        "Base Hue" = round(base_h, 2),
-        "Final Hue" = round(final_hue(), 2)
-      ))
-    } else {
-      print(list(
-        "Continuous Hue Only" = round(base_h, 2)
-      ))
-    }
   })
   
   current_model_values <- reactive({
@@ -232,40 +218,106 @@ function(input, output, session) {
     )
   }, striped = TRUE, bordered = TRUE, spacing = "m")
   
+  output$lch_output <- renderPrint({
+    req(current_lch())
+    
+    print(list(
+      Lightness = round(current_lch()$L, 2),
+      Chroma = round(current_lch()$C, 2),
+      Hue = round(final_hue(), 2)
+    ))
+  })
+  
+  output$unique_hue_output <- renderPrint({
+    req(current_lch())
+    
+    cat(
+      "Unique Hue Interpretation:", "\n",
+      "The current modeled hue is", round(final_hue(), 2), "degrees.", "\n",
+      "This represents the continuous angular position generated from the current valence and arousal inputs and serves as an entry point into the emotional equator used in the broader sphere model.",
+      sep = " "
+    )
+  })
+  
+  output$hex_output <- renderPrint({
+    req(current_hex())
+    print(list(Hex = current_hex()))
+  })
+  
+  output$color_swatch <- renderUI({
+    req(current_hex())
+    
+    tags$div(
+      style = paste0(
+        "width:100%; height:140px;",
+        "background-color:", current_hex(), ";",
+        "border-radius:12px; border:2px solid #444;"
+      )
+    )
+  })
+  
+  output$wheel_info <- renderPrint({
+    req(current_lch())
+    
+    base_h <- current_lch()$h
+    
+    if (isTRUE(input$use_wheel)) {
+      info <- get_feelings_label(base_h)
+      
+      print(list(
+        "Nearest Plutchik Label" = info$emotion,
+        "Confidence" = info$confidence,
+        "Base Hue" = round(base_h, 2),
+        "Final Hue" = round(final_hue(), 2)
+      ))
+    } else {
+      print(list(
+        "Continuous Hue Only" = round(base_h, 2)
+      ))
+    }
+  })
+  
   output$prototype_interpretation <- renderPrint({
     vals <- current_model_values()
     
     structure_text <- if (vals$z > 0.15) {
-      "The current state leans more constricted than diffuse."
+      "The current state leans more toward constriction than defusion."
     } else if (vals$z < -0.15) {
-      "The current state leans more diffuse than constricted."
+      "The current state leans more toward defusion than constriction."
     } else {
-      "The current state appears relatively balanced between constriction and diffusion."
+      "The current state appears relatively balanced between constriction and defusion."
     }
     
-    intensity_text <- if (vals$r > 0.8) {
-      "The overall magnitude is relatively strong."
-    } else if (vals$r > 0.4) {
-      "The overall magnitude is moderate."
+    intensity_text <- if (vals$r > 1.0) {
+      "Its overall magnitude is relatively strong."
+    } else if (vals$r > 0.5) {
+      "Its overall magnitude is moderate."
     } else {
-      "The overall magnitude is relatively gentle."
+      "Its overall magnitude is relatively gentle."
     }
     
-    direction_text <- if (vals$valence >= 0.5 && vals$arousal >= 0.5) {
-      "The point occupies a higher-valence, higher-arousal region."
-    } else if (vals$valence < 0.5 && vals$arousal >= 0.5) {
-      "The point occupies a lower-valence, higher-arousal region."
-    } else if (vals$valence < 0.5 && vals$arousal < 0.5) {
-      "The point occupies a lower-valence, lower-arousal region."
+    direction_text <- if (vals$valence > 0.2) {
+      "Its angular direction is currently pulled toward a more positive side of the emotional circle."
+    } else if (vals$valence < -0.2) {
+      "Its angular direction is currently pulled toward a more negative side of the emotional circle."
     } else {
-      "The point occupies a higher-valence, lower-arousal region."
+      "Its angular direction currently remains near the middle of the valence axis."
+    }
+    
+    activation_text <- if (vals$arousal > 0.7) {
+      "The activation level is relatively elevated."
+    } else if (vals$arousal > 0.3) {
+      "The activation level is moderate."
+    } else {
+      "The activation level is relatively low."
     }
     
     cat(
       structure_text, "\n\n",
       intensity_text, "\n\n",
       direction_text, "\n\n",
-      "The current hue and color output provide a continuous perceptual expression of this position.",
+      activation_text, "\n\n",
+      "Together, these inputs generate a continuous hue and color output that can later be placed into the broader sphere model.",
       sep = ""
     )
   })
@@ -276,23 +328,23 @@ function(input, output, session) {
     plot(
       x = vals$valence,
       y = vals$arousal,
-      xlim = c(0, 1),
+      xlim = c(-1, 1),
       ylim = c(0, 1),
       xlab = "Valence",
       ylab = "Arousal",
-      main = "2D Emotional Position",
+      main = "2D Input View",
       pch = 19,
       cex = 2,
       col = current_hex()
     )
     
     abline(h = seq(0, 1, by = 0.25), col = "gray85", lty = 3)
-    abline(v = seq(0, 1, by = 0.25), col = "gray85", lty = 3)
+    abline(v = seq(-1, 1, by = 0.5), col = "gray85", lty = 3)
     
-    text(0.15, 0.92, "low valence\nhigh arousal", cex = 0.8, col = "gray40")
-    text(0.85, 0.92, "high valence\nhigh arousal", cex = 0.8, col = "gray40")
-    text(0.15, 0.08, "low valence\nlow arousal", cex = 0.8, col = "gray40")
-    text(0.85, 0.08, "high valence\nlow arousal", cex = 0.8, col = "gray40")
+    text(-0.75, 0.92, "negative\nhigher arousal", cex = 0.8, col = "gray40")
+    text(0.75, 0.92, "positive\nhigher arousal", cex = 0.8, col = "gray40")
+    text(-0.75, 0.08, "negative\nlower arousal", cex = 0.8, col = "gray40")
+    text(0.75, 0.08, "positive\nlower arousal", cex = 0.8, col = "gray40")
     
     points(vals$valence, vals$arousal, pch = 19, cex = 2.4, col = current_hex())
   })
@@ -331,23 +383,20 @@ function(input, output, session) {
     selectInput("selected_song_id", "Choose a song ID", choices = song_ids, selected = song_ids[1])
   })
   
-  current_song_data <- reactive({
-    req(deam_loaded(), input$selected_song_id)
-    
-    valence_df <- deam_loaded()$valence
-    arousal_df <- deam_loaded()$arousal
-    
-    song_id <- as.numeric(input$selected_song_id)
+  get_song_time_series <- function(song_id, deam_data) {
+    valence_df <- deam_data$valence
+    arousal_df <- deam_data$arousal
     
     v_row <- valence_df[valence_df$song_id == song_id, , drop = FALSE]
     a_row <- arousal_df[arousal_df$song_id == song_id, , drop = FALSE]
     
-    req(nrow(v_row) > 0, nrow(a_row) > 0)
+    if (nrow(v_row) == 0 || nrow(a_row) == 0) return(NULL)
     
     sample_cols_v <- names(v_row)[grepl("^sample_", names(v_row))]
     sample_cols_a <- names(a_row)[grepl("^sample_", names(a_row))]
-    
     common_samples <- intersect(sample_cols_v, sample_cols_a)
+    
+    if (length(common_samples) == 0) return(NULL)
     
     time_vals <- as.numeric(gsub("sample_|ms", "", common_samples))
     ordered_idx <- order(time_vals)
@@ -364,7 +413,8 @@ function(input, output, session) {
       arousal = arousal_vals
     )
     
-    df <- df[is.finite(df$time) & is.finite(df$valence) & is.finite(df$arousal), ]
+    df <- df[is.finite(df$time) & is.finite(df$valence) & is.finite(df$arousal), , drop = FALSE]
+    if (nrow(df) == 0) return(NULL)
     
     df$constriction <- abs(df$valence) * abs(df$arousal)
     df$defusion <- (1 - abs(df$valence)) * (1 - abs(df$arousal))
@@ -373,6 +423,11 @@ function(input, output, session) {
     df$theta <- (atan2(df$arousal, df$valence) * 180 / pi) %% 360
     
     df
+  }
+  
+  current_song_data <- reactive({
+    req(deam_loaded(), input$selected_song_id)
+    get_song_time_series(as.numeric(input$selected_song_id), deam_loaded())
   })
   
   output$song_data_preview <- renderTable({
@@ -416,13 +471,12 @@ function(input, output, session) {
       col = "darkgreen",
       xlab = "Time (ms)",
       ylab = "Structural Axis z",
-      main = paste("Constriction vs Diffusion Across Time — Song", input$selected_song_id)
+      main = paste("Constriction vs Defusion Across Time — Song", input$selected_song_id)
     )
     abline(h = 0, lty = 2, col = "gray40")
   })
   
   # -------------------------
-  # PHASE 7 PART 3
   # SPHERE COORDINATES + COLOR MAPPING
   # -------------------------
   current_song_sphere <- reactive({
@@ -485,7 +539,7 @@ function(input, output, session) {
     
     mean_z <- mean(df$z, na.rm = TRUE)
     mean_r <- mean(df$r, na.rm = TRUE)
-    mean_theta <- mean(df$theta, na.rm = TRUE)
+    mean_theta <- circular_mean_degrees(df$theta)
     
     structure_text <- if (mean_z > 0.1) {
       "This song leans more toward constriction than defusion across time."
@@ -506,14 +560,14 @@ function(input, output, session) {
     direction_text <- paste(
       "Its average angular direction is",
       round(mean_theta, 2),
-      "degrees, which places its movement along the emotional equator rather than in a fixed category."
+      "degrees, placing it along the emotional equator rather than inside a fixed single category."
     )
     
     cat(
       structure_text, "\n\n",
       intensity_text, "\n\n",
       direction_text, "\n\n",
-      "Together, these coordinates support the idea that each observation can be placed into a developing emotional color sphere where angle represents emotional family, vertical position represents constriction versus defusion, and color emerges from the combined state.",
+      "Darker mapped values correspond to upward movement toward constriction, while lighter mapped values correspond to downward movement toward defusion.",
       sep = ""
     )
   })
@@ -530,7 +584,7 @@ function(input, output, session) {
     cat("Mean Defusion:", round(mean(df$defusion, na.rm = TRUE), 3), "\n")
     cat("Mean Structural Axis z:", round(mean(df$z, na.rm = TRUE), 3), "\n")
     cat("Mean Magnitude r:", round(mean(df$r, na.rm = TRUE), 3), "\n")
-    cat("Mean Hue:", round(mean(df$hue, na.rm = TRUE), 3), "\n")
+    cat("Mean Hue:", round(circular_mean_degrees(df$hue), 3), "\n")
     cat("Mean Lightness:", round(mean(df$lightness, na.rm = TRUE), 3), "\n")
     cat("Mean Chroma:", round(mean(df$chroma, na.rm = TRUE), 3), "\n\n")
     
@@ -541,6 +595,160 @@ function(input, output, session) {
     } else {
       cat("Overall interpretation: this song appears structurally balanced on average.")
     }
+  })
+  
+  # -------------------------
+  # GROUPED SONG COMPARISON TABLE
+  # -------------------------
+  all_song_summaries <- reactive({
+    req(deam_loaded())
+    
+    song_ids <- intersect(deam_loaded()$valence$song_id, deam_loaded()$arousal$song_id)
+    song_ids <- sort(song_ids)
+    
+    summaries <- lapply(song_ids, function(id) {
+      df <- get_song_time_series(id, deam_loaded())
+      if (is.null(df)) return(NULL)
+      
+      mean_theta <- circular_mean_degrees(df$theta)
+      mean_z <- mean(df$z, na.rm = TRUE)
+      mean_r <- mean(df$r, na.rm = TRUE)
+      
+      mean_hue <- mean_theta
+      mean_lightness <- map_z_to_lightness(mean_z)
+      mean_chroma <- map_r_to_chroma(mean_r)
+      mean_hex <- lch_to_hex(mean_lightness, mean_chroma, mean_hue)
+      
+      dominant_label <- get_feelings_label(mean_theta)$emotion
+      nearby_labels <- top_plutchik_labels(df$theta, top_n = 3)
+      
+      interpretation_group <- if (mean_z > 0.10) {
+        "Toward Constriction"
+      } else if (mean_z < -0.10) {
+        "Toward Defusion"
+      } else {
+        "Balanced"
+      }
+      
+      data.frame(
+        Song_ID = id,
+        Average_Angle = round(mean_theta, 2),
+        Average_Z = round(mean_z, 3),
+        Average_R = round(mean_r, 3),
+        Representative_Hue = round(mean_hue, 2),
+        Representative_Color = mean_hex,
+        Dominant_Label = dominant_label,
+        Nearby_Labels = nearby_labels,
+        Interpretation_Group = interpretation_group,
+        Interpretation = interpret_song_summary(mean_z, mean_r, mean_theta),
+        stringsAsFactors = FALSE
+      )
+    })
+    
+    summaries <- summaries[!sapply(summaries, is.null)]
+    do.call(rbind, summaries)
+  })
+  
+  output$balanced_song_ui <- renderUI({
+    req(all_song_summaries())
+    
+    balanced_choices <- all_song_summaries()
+    balanced_choices <- balanced_choices[balanced_choices$Interpretation_Group == "Balanced", ]
+    
+    selectInput(
+      "balanced_song",
+      "Balanced Song",
+      choices = balanced_choices$Song_ID,
+      selected = if (nrow(balanced_choices) > 0) balanced_choices$Song_ID[1] else NULL
+    )
+  })
+  
+  output$diffused_song_ui <- renderUI({
+    req(all_song_summaries())
+    
+    diffused_choices <- all_song_summaries()
+    diffused_choices <- diffused_choices[diffused_choices$Interpretation_Group == "Toward Defusion", ]
+    
+    selectInput(
+      "diffused_song",
+      "Toward Defusion",
+      choices = diffused_choices$Song_ID,
+      selected = if (nrow(diffused_choices) > 0) diffused_choices$Song_ID[1] else NULL
+    )
+  })
+  
+  output$constricted_song_ui <- renderUI({
+    req(all_song_summaries())
+    
+    constricted_choices <- all_song_summaries()
+    constricted_choices <- constricted_choices[constricted_choices$Interpretation_Group == "Toward Constriction", ]
+    
+    selectInput(
+      "constricted_song",
+      "Toward Constriction",
+      choices = constricted_choices$Song_ID,
+      selected = if (nrow(constricted_choices) > 0) constricted_choices$Song_ID[1] else NULL
+    )
+  })
+  
+  output$song_comparison_table_ui <- renderUI({
+    req(all_song_summaries(), input$balanced_song, input$diffused_song, input$constricted_song)
+    
+    chosen_ids <- unique(as.numeric(c(
+      input$balanced_song,
+      input$diffused_song,
+      input$constricted_song
+    )))
+    
+    comparison_df <- all_song_summaries()
+    comparison_df <- comparison_df[comparison_df$Song_ID %in% chosen_ids, , drop = FALSE]
+    req(nrow(comparison_df) > 0)
+    
+    comparison_df <- comparison_df[match(chosen_ids, comparison_df$Song_ID), , drop = FALSE]
+    
+    rows <- lapply(seq_len(nrow(comparison_df)), function(i) {
+      row <- comparison_df[i, ]
+      
+      tags$tr(
+        tags$td(row$Interpretation_Group),
+        tags$td(row$Song_ID),
+        tags$td(row$Average_Angle),
+        tags$td(row$Average_Z),
+        tags$td(row$Average_R),
+        tags$td(row$Representative_Hue),
+        tags$td(
+          tags$div(
+            style = paste0(
+              "width:32px; height:20px; background:", row$Representative_Color,
+              "; border:1px solid #444; border-radius:4px; display:inline-block; margin-right:8px;"
+            )
+          ),
+          row$Representative_Color
+        ),
+        tags$td(row$Dominant_Label),
+        tags$td(row$Nearby_Labels),
+        tags$td(row$Interpretation)
+      )
+    })
+    
+    tags$table(
+      class = "table table-striped table-bordered",
+      tags$thead(
+        tags$tr(
+          tags$th("Group"),
+          tags$th("Song ID"),
+          tags$th("Avg Angle"),
+          tags$th("Avg Z"),
+          tags$th("Avg R"),
+          tags$th("Hue"),
+          tags$th("Color"),
+          tags$th("Dominant Label"),
+          tags$th("Nearby Labels"),
+          tags$th("Interpretation")
+        )
+      ),
+      tags$tbody(rows)
+    )
   })
   
   # -------------------------
