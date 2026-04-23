@@ -22,7 +22,7 @@ lch_to_hex <- function(L, C, h) {
   C <- max(as.numeric(C), 0)
   h <- as.numeric(h) %% 360
   
-  grDevices::hcl(h = h, c = C, l = L)
+  grDevices::hcl(h = h, c = C, l = L, fixup = TRUE)
 }
 
 # =========================
@@ -61,12 +61,25 @@ snap_hue_to_wheel <- function(hue, enabled) {
 }
 
 # =========================
+# SPHERE MAPPING HELPERS
+# =========================
+map_z_to_lightness <- function(z) {
+  z_clamped <- pmax(pmin(z, 1), -1)
+  65 + (20 * z_clamped)
+}
+
+map_r_to_chroma <- function(r) {
+  r_clamped <- pmax(pmin(r, 1.5), 0)
+  20 + (40 * (r_clamped / 1.5))
+}
+
+# =========================
 # SERVER
 # =========================
 function(input, output, session) {
   
   # -------------------------
-  # LCh + Color
+  # PROTOTYPE PAGE
   # -------------------------
   current_lch <- reactive({
     affect_to_lch(input$valence_test, input$arousal_test)
@@ -124,9 +137,6 @@ function(input, output, session) {
     )
   })
   
-  # -------------------------
-  # PLUTCHIK LABEL
-  # -------------------------
   output$wheel_info <- renderPrint({
     req(current_lch())
     
@@ -148,9 +158,6 @@ function(input, output, session) {
     }
   })
   
-  # -------------------------
-  # MODEL LOGIC
-  # -------------------------
   current_model_values <- reactive({
     v <- input$valence_test
     a <- input$arousal_test
@@ -263,9 +270,6 @@ function(input, output, session) {
     )
   })
   
-  # -------------------------
-  # PLOT
-  # -------------------------
   output$emotion_map_plot <- renderPlot({
     vals <- current_model_values()
     
@@ -294,38 +298,74 @@ function(input, output, session) {
   })
   
   # -------------------------
-  # PHASE 7 PART 1 - DATA IMPLEMENTATION
+  # DATA IMPLEMENTATION WITH DEAM
   # -------------------------
+  valence_file <- "data/valence.csv"
+  arousal_file <- "data/arousal.csv"
   
-  data_file <- "data/emotion_data.csv"
-  
-  data_loaded <- reactive({
-    if (file.exists(data_file)) {
-      read.csv(data_file)
-    } else {
-      NULL
+  deam_loaded <- reactive({
+    if (!file.exists(valence_file) || !file.exists(arousal_file)) {
+      return(NULL)
     }
+    
+    valence_df <- read.csv(valence_file, check.names = FALSE)
+    arousal_df <- read.csv(arousal_file, check.names = FALSE)
+    
+    list(valence = valence_df, arousal = arousal_df)
   })
   
   output$data_status <- renderPrint({
-    if (is.null(data_loaded())) {
-      cat("No dataset found. Please place a CSV file in the data folder named 'emotion_data.csv'.")
+    if (is.null(deam_loaded())) {
+      cat("DEAM files not found. Please place valence.csv and arousal.csv in the data folder.")
     } else {
-      cat("Dataset loaded successfully.")
+      cat("DEAM valence and arousal files loaded successfully.")
     }
   })
   
-  output$data_preview <- renderTable({
-    req(data_loaded())
-    head(data_loaded(), 10)
+  output$song_selector <- renderUI({
+    req(deam_loaded())
+    
+    song_ids <- intersect(deam_loaded()$valence$song_id, deam_loaded()$arousal$song_id)
+    song_ids <- sort(song_ids)
+    
+    selectInput("selected_song_id", "Choose a song ID", choices = song_ids, selected = song_ids[1])
   })
   
-  # apply model to dataset
-  model_applied_data <- reactive({
-    df <- data_loaded()
-    req(df)
+  current_song_data <- reactive({
+    req(deam_loaded(), input$selected_song_id)
     
-    # expect columns: valence, arousal
+    valence_df <- deam_loaded()$valence
+    arousal_df <- deam_loaded()$arousal
+    
+    song_id <- as.numeric(input$selected_song_id)
+    
+    v_row <- valence_df[valence_df$song_id == song_id, , drop = FALSE]
+    a_row <- arousal_df[arousal_df$song_id == song_id, , drop = FALSE]
+    
+    req(nrow(v_row) > 0, nrow(a_row) > 0)
+    
+    sample_cols_v <- names(v_row)[grepl("^sample_", names(v_row))]
+    sample_cols_a <- names(a_row)[grepl("^sample_", names(a_row))]
+    
+    common_samples <- intersect(sample_cols_v, sample_cols_a)
+    
+    time_vals <- as.numeric(gsub("sample_|ms", "", common_samples))
+    ordered_idx <- order(time_vals)
+    
+    common_samples <- common_samples[ordered_idx]
+    time_vals <- time_vals[ordered_idx]
+    
+    valence_vals <- as.numeric(v_row[1, common_samples, drop = TRUE])
+    arousal_vals <- as.numeric(a_row[1, common_samples, drop = TRUE])
+    
+    df <- data.frame(
+      time = time_vals,
+      valence = valence_vals,
+      arousal = arousal_vals
+    )
+    
+    df <- df[is.finite(df$time) & is.finite(df$valence) & is.finite(df$arousal), ]
+    
     df$constriction <- abs(df$valence) * abs(df$arousal)
     df$defusion <- (1 - abs(df$valence)) * (1 - abs(df$arousal))
     df$z <- df$constriction - df$defusion
@@ -335,23 +375,174 @@ function(input, output, session) {
     df
   })
   
+  output$song_data_preview <- renderTable({
+    req(current_song_data())
+    head(current_song_data(), 10)
+  }, striped = TRUE, bordered = TRUE, spacing = "m")
+  
   output$model_applied_table <- renderTable({
-    req(model_applied_data())
-    head(model_applied_data(), 10)
+    req(current_song_data())
+    
+    out <- current_song_data()[, c("time", "valence", "arousal", "constriction", "defusion", "z", "r", "theta")]
+    head(out, 12)
+  }, striped = TRUE, bordered = TRUE, spacing = "m")
+  
+  output$valence_arousal_plot <- renderPlot({
+    req(current_song_data())
+    df <- current_song_data()
+    
+    plot(
+      df$time, df$valence,
+      type = "l",
+      lwd = 2,
+      col = "blue",
+      ylim = range(c(df$valence, df$arousal), na.rm = TRUE),
+      xlab = "Time (ms)",
+      ylab = "Value",
+      main = paste("Valence and Arousal Over Time — Song", input$selected_song_id)
+    )
+    lines(df$time, df$arousal, lwd = 2, col = "red")
+    legend("topright", legend = c("Valence", "Arousal"), col = c("blue", "red"), lty = 1, lwd = 2, bty = "n")
+  })
+  
+  output$structure_plot <- renderPlot({
+    req(current_song_data())
+    df <- current_song_data()
+    
+    plot(
+      df$time, df$z,
+      type = "l",
+      lwd = 2,
+      col = "darkgreen",
+      xlab = "Time (ms)",
+      ylab = "Structural Axis z",
+      main = paste("Constriction vs Diffusion Across Time — Song", input$selected_song_id)
+    )
+    abline(h = 0, lty = 2, col = "gray40")
+  })
+  
+  # -------------------------
+  # PHASE 7 PART 3
+  # SPHERE COORDINATES + COLOR MAPPING
+  # -------------------------
+  current_song_sphere <- reactive({
+    req(current_song_data())
+    df <- current_song_data()
+    
+    df$hue <- df$theta
+    df$lightness <- map_z_to_lightness(df$z)
+    df$chroma <- map_r_to_chroma(df$r)
+    
+    df$hex <- mapply(
+      FUN = function(L, C, h) {
+        lch_to_hex(L, C, h)
+      },
+      df$lightness,
+      df$chroma,
+      df$hue
+    )
+    
+    df
+  })
+  
+  output$sphere_table <- renderTable({
+    req(current_song_sphere())
+    
+    out <- current_song_sphere()[, c(
+      "time", "theta", "z", "r", "hue", "lightness", "chroma", "hex"
+    )]
+    
+    head(out, 12)
+  }, striped = TRUE, bordered = TRUE, spacing = "m")
+  
+  output$sphere_coordinate_plot <- renderPlot({
+    req(current_song_sphere())
+    df <- current_song_sphere()
+    
+    plot(
+      df$theta,
+      df$z,
+      pch = 19,
+      cex = 1.4,
+      col = df$hex,
+      xlim = c(0, 360),
+      ylim = c(-1, 1),
+      xlab = "Equator Angle / Plutchik Direction (degrees)",
+      ylab = "Vertical Structure (Constriction ↔ Defusion)",
+      main = paste("2D Sphere Coordinate View — Song", input$selected_song_id)
+    )
+    
+    abline(h = 0, lty = 2, col = "gray40")
+    abline(v = seq(0, 360, by = 45), lty = 3, col = "gray85")
+    
+    text(180, 0.92, "Constriction", cex = 0.9, col = "gray30")
+    text(180, -0.92, "Defusion", cex = 0.9, col = "gray30")
+  })
+  
+  output$sphere_interpretation <- renderPrint({
+    req(current_song_sphere())
+    df <- current_song_sphere()
+    
+    mean_z <- mean(df$z, na.rm = TRUE)
+    mean_r <- mean(df$r, na.rm = TRUE)
+    mean_theta <- mean(df$theta, na.rm = TRUE)
+    
+    structure_text <- if (mean_z > 0.1) {
+      "This song leans more toward constriction than defusion across time."
+    } else if (mean_z < -0.1) {
+      "This song leans more toward defusion than constriction across time."
+    } else {
+      "This song remains relatively balanced between constriction and defusion across time."
+    }
+    
+    intensity_text <- if (mean_r > 0.8) {
+      "Its average emotional magnitude is relatively strong."
+    } else if (mean_r > 0.4) {
+      "Its average emotional magnitude is moderate."
+    } else {
+      "Its average emotional magnitude is relatively gentle."
+    }
+    
+    direction_text <- paste(
+      "Its average angular direction is",
+      round(mean_theta, 2),
+      "degrees, which places its movement along the emotional equator rather than in a fixed category."
+    )
+    
+    cat(
+      structure_text, "\n\n",
+      intensity_text, "\n\n",
+      direction_text, "\n\n",
+      "Together, these coordinates support the idea that each observation can be placed into a developing emotional color sphere where angle represents emotional family, vertical position represents constriction versus defusion, and color emerges from the combined state.",
+      sep = ""
+    )
   })
   
   output$data_summary_output <- renderPrint({
-    df <- model_applied_data()
-    req(df)
+    req(current_song_sphere())
+    df <- current_song_sphere()
     
-    cat("Number of observations:", nrow(df), "\n\n")
+    cat("Song ID:", input$selected_song_id, "\n\n")
+    cat("Observations:", nrow(df), "\n")
+    cat("Mean Valence:", round(mean(df$valence, na.rm = TRUE), 3), "\n")
+    cat("Mean Arousal:", round(mean(df$arousal, na.rm = TRUE), 3), "\n")
+    cat("Mean Constriction:", round(mean(df$constriction, na.rm = TRUE), 3), "\n")
+    cat("Mean Defusion:", round(mean(df$defusion, na.rm = TRUE), 3), "\n")
+    cat("Mean Structural Axis z:", round(mean(df$z, na.rm = TRUE), 3), "\n")
+    cat("Mean Magnitude r:", round(mean(df$r, na.rm = TRUE), 3), "\n")
+    cat("Mean Hue:", round(mean(df$hue, na.rm = TRUE), 3), "\n")
+    cat("Mean Lightness:", round(mean(df$lightness, na.rm = TRUE), 3), "\n")
+    cat("Mean Chroma:", round(mean(df$chroma, na.rm = TRUE), 3), "\n\n")
     
-    cat("Average Valence:", round(mean(df$valence, na.rm = TRUE), 3), "\n")
-    cat("Average Arousal:", round(mean(df$arousal, na.rm = TRUE), 3), "\n\n")
-    
-    cat("Average Structural Axis (z):", round(mean(df$z, na.rm = TRUE), 3), "\n")
-    cat("Average Magnitude (r):", round(mean(df$r, na.rm = TRUE), 3), "\n")
+    if (mean(df$z, na.rm = TRUE) > 0) {
+      cat("Overall interpretation: this song leans more constricted than diffused on average.")
+    } else if (mean(df$z, na.rm = TRUE) < 0) {
+      cat("Overall interpretation: this song leans more diffused than constricted on average.")
+    } else {
+      cat("Overall interpretation: this song appears structurally balanced on average.")
+    }
   })
+  
   # -------------------------
   # FORMULA PAGE OUTPUTS
   # -------------------------
