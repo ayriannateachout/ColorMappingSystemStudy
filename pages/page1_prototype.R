@@ -85,7 +85,7 @@ page1_ui <- fluidPage(
   
   hr(),
   
-  h3("6. Optional Plutchik Comparison"),
+  h3("6.Plutchik Comparison"),
   p("This section shows the nearest Plutchik label and its relationship to the current hue position."),
   verbatimTextOutput("wheel_info"),
   

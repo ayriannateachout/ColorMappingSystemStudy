@@ -4,6 +4,22 @@ page2_ui <- fluidPage(
   
   titlePanel("Emotional Structure and Continuous Representation"),
   
+  h3("Problem: AI, Color, and the Need for Nuance"),
+  
+  p("Many modern technological systems rely on simplified representations of complex human experiences. Emotional data is often reduced to binary or limited categories, such as positive or negative, or a small set of labeled states. While this approach is efficient, it does not leave much room for nuance."),
+  
+  p("Color provides a useful way to understand this limitation. A color wheel is often presented as a set of distinct segments, but in reality, hue exists on a continuous spectrum. Between any two colors, there are infinitely many intermediate variations. As precision increases, hue can be represented with greater detail, extending into highly granular values. In this sense, a color wheel can be understood as a simplified view of an underlying continuum."),
+  
+  p("This perspective suggests a broader idea. Just as color can move from discrete categories to continuous representation, emotional and cognitive systems in technology may benefit from models that allow for gradual variation rather than strict separation."),
+  
+  p("Artificial intelligence systems often rely on structured inputs and outputs that resemble binary logic. While binary systems are foundational to computation, the experiences they aim to represent are not inherently binary. Emotional states, perception, and interpretation tend to shift gradually and exist in overlapping regions."),
+  
+  p("Introducing continuous representations does not replace binary computation. Instead, it provides an additional interpretive layer. Rather than asking whether a state belongs to one category or another, a system can represent where it exists within a broader space."),
+  
+  p("This idea motivates the development of a continuous emotional model. By using color as a guiding structure, the system aims to preserve nuance while remaining interpretable. :contentReference[oaicite:0]{index=0}"),
+  
+  hr(),
+  
   h3("Context"),
   p("Emotional systems have often been described using discrete categories. These structures provide a shared language, allowing people to recognize, label, and communicate emotional experience in consistent ways. Frameworks such as Plutchik’s Wheel of Emotions organize these categories into relationships, where proximity reflects similarity and opposition reflects contrast."),
   
